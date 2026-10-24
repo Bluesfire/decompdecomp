@@ -39,7 +39,7 @@ def test_restoring_room_members_credits_does_not_reject_their_names(tmp_path, mo
     result = saves._apply(net, "game", tmp_path, manifest, lambda *_: None)
     agent, _ = net.local_agent(author)
     assert result == {"matched": 0, "best": 1, "lost": []}
-    assert judged == [(agent.id, "f", "void f(void) {}", "game")]
+    assert judged == [(net.local_agent("progress-judge")[0].id, "f", "void f(void) {}", "game")]
     assert net.store.one("SELECT agent_id FROM notes WHERE text=?", "Try an unsigned comparison.")["agent_id"] == agent.id
 
 
@@ -120,7 +120,8 @@ def test_a_whole_decomp_folder_copied_elsewhere_keeps_its_projects(tmp_path):
     (old_home / "game").mkdir(parents=True)
     net = RomNetwork(old_home / "decomp.db", old_home)
     with net.store.tx() as db:
-        db.execute("INSERT INTO projects(slug, name, root, config) VALUES('game', 'Game', ?, '{}')", (str(old_home / "game"),))
+        db.execute("INSERT INTO projects(slug, name, root, config) VALUES('game', 'Game', ?, ?)",
+                   (str(old_home / "game"), json.dumps({"progress_folder": str(old_home / "game" / "progress")})))
     # Moving the folder is an offline operation; Windows won't remove open database files.
     reader = getattr(net.store._local, "conn", None)
     if reader is not None:
@@ -130,6 +131,7 @@ def test_a_whole_decomp_folder_copied_elsewhere_keeps_its_projects(tmp_path):
     shutil.rmtree(tmp_path / "old")
     moved = RomNetwork(new_home / "decomp.db", new_home)
     assert moved.project_row("game")["root"] == str(new_home / "game")
+    assert saves.default_folder(moved, "game") == new_home / "game" / "progress"
 
 
 def test_a_project_mode_games_save_writes_its_closest_attempts(tmp_path):
