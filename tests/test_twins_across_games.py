@@ -12,9 +12,9 @@ from .test_rom import ROM, built  # noqa: F401  (fixture that builds the demo RO
 
 
 def copy_project(net, slug, new_slug):
-    """The same game as another project: every function, symbol and header row copied under a new id."""
+    """The same game as another project: share its ROM and copy its functions, symbols and headers under a new id."""
     src = net._project(slug)
-    root = Path(src["root"]) / new_slug
+    root = Path(src["root"])
     with net.store.tx() as db:
         pid = db.execute("INSERT INTO projects(slug,name,description,arch,big_endian,root,config) VALUES(?,?,?,?,?,?,?)",
                          (new_slug, "Another Game", "", src["arch"], src["big_endian"], str(root),
