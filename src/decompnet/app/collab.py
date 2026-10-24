@@ -563,6 +563,7 @@ class Link:
         self.behind = 0  # events the host still has for us
         self.received = 0  # events caught up so far (with `behind`, how far "getting the host's work" is)
         self.synced = False  # caught up with the host since the app started
+        self.saved_progress: tuple[list[dict], bool] | None = None
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self.fork = bool(net.fork_slug(slug))  # a git source tree: follows the host's commits (forkroom.py)
@@ -629,6 +630,13 @@ class Link:
             self.synced = self.synced or not self.behind
             if self.cursor != self.saved:
                 self._save_cursor()
+            saved_progress = self.saved_progress
+            self.saved_progress = None
+        if saved_progress:
+            candidates, best_comparable = saved_progress
+            _share_saved_progress(
+                self.net, self.slug, self, candidates, fork=False, best_comparable=best_comparable,
+                log=lambda line: logger.info("%s: %s", self.slug, line), sync_room=False)
 
     def _save_cursor(self) -> None:
         proj = self.net.project_row(self.slug)
@@ -803,7 +811,7 @@ def _saved_progress(net, *, slug: str | None = None, identity: str | None = None
 
 
 def _share_saved_progress(net, slug: str, link: Link, candidates: list[dict], *, fork: bool,
-                         best_comparable: bool = False, log) -> None:
+                         best_comparable: bool = False, log, sync_room: bool = True) -> None:
     """Send stronger saved work to the host; matches are always rechecked there."""
     if not candidates:
         return
@@ -858,10 +866,11 @@ def _share_saved_progress(net, slug: str, link: Link, candidates: list[dict], *,
             log(f"Couldn't send saved progress for {function}: {e}")
             break
 
-    try:
-        link.sync()
-    except NetworkError as e:
-        log(f"Couldn't sync the room after sending saved progress: {e}")
+    if sync_room:
+        try:
+            link.sync()
+        except NetworkError as e:
+            log(f"Couldn't sync the room after sending saved progress: {e}")
     if matches or best_attempts:
         log(f"The host confirmed {matches} saved match{'es' if matches != 1 else ''}; "
             f"submitted {best_attempts} better attempt{'s' if best_attempts != 1 else ''}.")
@@ -931,9 +940,6 @@ def join_room(net, link: str, name: str, rom: bytes | Path, log=print, client: h
     joined = r.json()
     if r.status_code != 200:
         raise NetworkError(joined.get("error", "couldn't join"))
-    if joined.get("waiting"):
-        _wait_to_be_let_in(http, url, hello["room"],
-                           {"authorization": "Bearer " + joined["token"], "x-room": hello["room"]})
     slug = net.import_rom(rom, toolchain=hello["compiler"]["toolchain"], flags=hello["compiler"]["flags"],
                           confirmed=True, log=log)
     candidates = _saved_progress(net, slug=slug)
@@ -941,8 +947,11 @@ def join_room(net, link: str, name: str, rom: bytes | Path, log=print, client: h
     room_link = net.link_project(slug, {"url": url, "room": hello["room"], "token": joined["token"],
                                         "member": joined["name"], "host_title": hello["title"]},
                                  client=client, start=False)
-    _share_saved_progress(net, slug, room_link, candidates, fork=False,
-                          best_comparable=best_comparable, log=log)
+    if candidates and joined.get("waiting"):
+        room_link.saved_progress = (candidates, best_comparable)
+    elif candidates:
+        _share_saved_progress(net, slug, room_link, candidates, fork=False,
+                              best_comparable=best_comparable, log=log)
     if start:
         room_link.run()
     log(f"linked as {joined['name']}: your agents now work with the room")

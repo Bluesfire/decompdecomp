@@ -108,8 +108,14 @@ def test_a_save_restores_only_onto_the_same_game(worked, tmp_path):
 
 def test_autosave_saves_what_changed_only(worked):
     net, slug, _ = worked
+    project_id = net._project(slug)["id"]
+    with net.store.tx() as db:
+        db.execute("UPDATE functions SET best_source='new attempt',best_score=10 WHERE id="
+                   "(SELECT id FROM functions WHERE project_id=? AND status='open' ORDER BY n_insns DESC LIMIT 1)",
+                   (project_id,))
     auto = saves.Autosave(net)
     assert auto.run_once() == [slug] and auto.run_once() == []
+    assert any((saves.default_folder(net, slug) / "best").glob("*.c"))
     assert (saves.default_folder(net, slug) / saves.MANIFEST).exists()
 
 
