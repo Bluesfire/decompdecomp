@@ -21,6 +21,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 from .. import compiler, consoles, toolchains
@@ -264,8 +265,11 @@ def restore(net, source: str, game: Path, log=print) -> dict:
             raise NetworkError(f"that's not the same game: this save is for {manifest['title']} "
                                f"({manifest['game'].get('file') or 'its original file'}); pick your copy of that one")
         log("importing and splitting your game copy")
-        with compiler.cancellable(getattr(log, "check_cancel", lambda: None)), net.progress.lock:
-            net.progress.local.busy = True  # importing must not create a second progress folder before binding this one
+        progress = getattr(net, "progress", None)
+        with compiler.cancellable(getattr(log, "check_cancel", lambda: None)), \
+                (progress.lock if progress is not None else nullcontext()):
+            if progress is not None:
+                progress.local.busy = True  # importing must not create a second progress folder before binding this one
             try:
                 slug = net.import_rom(data, confirmed=True, name=data.name, log=log)
                 getattr(log, "check_cancel", lambda: None)()
@@ -280,12 +284,15 @@ def restore(net, source: str, game: Path, log=print) -> dict:
                     _publish(live, {}, _read(live))
                     shutil.copytree(folder, live, dirs_exist_ok=True)
                 net._update_cfg(slug, lambda cfg: cfg.__setitem__("progress_folder", str(live)))
-                net.progress.disk.pop(slug, None)
-                net.progress.projected.pop(slug, None)
+                if progress is None:
+                    raise RuntimeError("restoring a saved project requires progress synchronization")
+                progress.disk.pop(slug, None)
+                progress.projected.pop(slug, None)
             finally:
-                net.progress.local.busy = False
-            net.progress.sync(slug, force=True, logger=log)
-            return net.progress.results[slug] | {"slug": slug}
+                if progress is not None:
+                    progress.local.busy = False
+            progress.sync(slug, force=True, logger=log)
+            return progress.results[slug] | {"slug": slug}
 
 
 def _apply(net, slug: str, folder: Path, manifest: dict, log, files: dict[str, str] | None = None) -> dict:
