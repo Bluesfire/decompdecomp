@@ -95,6 +95,7 @@ def test_host_work_reaches_the_guest(room):
 
 def test_join_shares_stronger_saved_progress(built, tmp_path):  # noqa: F811
     host_home = tmp_path / "host"
+    host_home.mkdir()
     host = RomNetwork(host_home / "d.db", host_home)
     slug = host.import_rom(built, confirmed=True, log=lambda *_: None)
     host_agent, _ = host.local_agent("claude-1")

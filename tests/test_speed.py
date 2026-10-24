@@ -287,6 +287,11 @@ def test_the_permuter_finishes_a_near_miss(game, monkeypatch):
     for seed in range(200):  # a variant that compiles and is close, but not the same code
         variant = mutate(source, random.Random(seed))
         res = net.try_quietly(agent, net.project_row(slug), {**fn, "status": "open"}, variant) if variant else None
+        if res and res["matched"]:
+            (saves.default_folder(net, slug) / "src" / f"{fn['name']}.c").unlink()
+            net.progress.sync(slug, force=True)
+            fn = net._function("entity_update_physics", slug)
+            continue
         if res and res["score"] and res["score"] <= fn["n_insns"] * 100 * 0.06:
             near = (variant, res["score"])
             break
