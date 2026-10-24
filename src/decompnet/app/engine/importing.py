@@ -144,6 +144,35 @@ class ImportMixin:
             cfg.pop("kernel_calls_named", None)
         header = BASE_HEADER.format(title=info["title"]) + (GP_NOTE if res.gp else "")
         header += self._debug_types(debug, cfg, workdir, log)
+        if reimport is not None:
+            old_rows = self.store.all("SELECT id,name,vram FROM functions WHERE project_id=?", reimport["id"])
+            by_vram = {r["vram"]: r for r in old_rows if r["vram"] is not None}
+            by_name = {r["name"]: r for r in old_rows}
+            paired_names = {}
+            paired_ids = set()
+            for fn in res.functions:
+                old = by_vram.get(fn.vram) or by_name.get(fn.name)
+                if old is not None and old["id"] not in paired_ids:
+                    paired_names[fn.vram] = old["name"]
+                    paired_ids.add(old["id"])
+
+            incoming_names = {fn.name for fn in res.functions} | set(res.named)
+            retained_names = set(paired_names.values())
+            used_names = set()
+            for fn in res.functions:
+                retained_name = paired_names.get(fn.vram)
+                named_address = res.named.get(fn.name)
+                conflicts = (fn.name in used_names
+                             or (fn.name in retained_names and retained_name != fn.name)
+                             or (named_address is not None and named_address != fn.vram))
+                if conflicts:
+                    base = f"func_{fn.vram:08X}"
+                    name, suffix = base, 2
+                    while name in incoming_names or name in retained_names or name in used_names:
+                        name, suffix = f"{base}_{suffix}", suffix + 1
+                    fn.name = name
+                used_names.add(fn.name)
+
         symbols = SymbolTable()
         for name, addr in res.named.items():
             symbols.add(Symbol(name, addr, 0, "func"), reindex=False)

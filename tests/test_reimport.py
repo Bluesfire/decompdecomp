@@ -86,7 +86,7 @@ def test_reimport_replaces_analysis_and_keeps_only_unchanged_matches(tmp_path, m
     functions = [
         split.RomFunction("func_80000000", 0x80000000, 4, "code", [line_same], root / "same.s"),
         split.RomFunction("func_80000004", 0x80000004, 4, "code", [line_changed], root / "changed.s"),
-        split.RomFunction("func_8000000C", 0x8000000C, 8, "code", [line_new], root / "new.s"),
+        split.RomFunction("clamp_s32", 0x8000000C, 8, "code", [line_new], root / "new.s"),
     ]
 
     def fake_split(workdir, *args, **kwargs):
@@ -124,7 +124,8 @@ def test_reimport_replaces_analysis_and_keeps_only_unchanged_matches(tmp_path, m
     orphaned_note = net.store.one("SELECT function_id, text FROM notes WHERE text LIKE '%removed function%'")
     assert orphaned_note["function_id"] is None
     assert orphaned_note["text"] == "[func_80000008 before reimport] note on removed function"
-    assert net.store.one("SELECT 1 FROM functions WHERE project_id=? AND name=?", pid, "func_8000000C")
+    assert net.store.one("SELECT name FROM functions WHERE project_id=? AND vram=?", pid, 0x8000000C)["name"] == \
+        "func_8000000C"
     saved = json.loads(net.project_row("game")["config"])
     assert saved["compiler"] == cfg["compiler"] and saved["auto_compiler"] is True
     assert net.project_row("game")["name"] == "old game"
